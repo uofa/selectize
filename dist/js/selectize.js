@@ -432,7 +432,15 @@
 				value = placeholder;
 			}
 	
-			width = measureString(value, $input) + 4;
+	        var buffer = 4;
+	        width = measureString(value, $input) + buffer;
+	        // Add more width to allow easier text selection
+	        if (width > buffer) {
+	            var children_width = 0;
+	            $input.parent().children(':not(input)').each(function() { children_width += $(this).outerWidth() + buffer; });
+	            var remaining_space = $input.parent().width() - children_width - width;
+	            width += remaining_space;
+	        }
 			if (width !== currentWidth) {
 				currentWidth = width;
 				$input.width(width);
@@ -443,6 +451,15 @@
 		$input.on('keydown keyup update blur', update);
 		update();
 	};
+	
+	var domToString = function(d) {
+		var tmp = document.createElement('div');
+	
+		tmp.appendChild(d.cloneNode(true));
+	
+		return tmp.innerHTML;
+	};
+	
 	
 	var Selectize = function($input, settings) {
 		var key, i, n, dir, input, self = this;
@@ -650,7 +667,8 @@
 			$document.on('mousedown' + eventNS, function(e) {
 				if (self.isFocused) {
 					// prevent events on the dropdown scrollbar from causing the control to blur
-					if (e.target === self.$dropdown[0] || e.target.parentNode === self.$dropdown[0]) {
+					if (e.target === self.$dropdown[0] || e.target.parentNode === self.$dropdown[0] ||
+					$(e.target).hasClass('optgroup-header')) {
 						return false;
 					}
 					// blur on click outside
@@ -666,7 +684,11 @@
 				}
 			});
 			$window.on('mousemove' + eventNS, function() {
-				self.ignoreHover = false;
+				if (self.settings.ignoreHover) {
+					self.ignoreHover = true;
+				} else {
+					self.ignoreHover = false;
+				}
 			});
 	
 			// store original children and tab index so that they can be
@@ -750,23 +772,24 @@
 		 */
 		setupCallbacks: function() {
 			var key, fn, callbacks = {
-				'initialize'      : 'onInitialize',
-				'change'          : 'onChange',
-				'item_add'        : 'onItemAdd',
-				'item_remove'     : 'onItemRemove',
-				'clear'           : 'onClear',
-				'option_add'      : 'onOptionAdd',
-				'option_remove'   : 'onOptionRemove',
-				'option_clear'    : 'onOptionClear',
-				'optgroup_add'    : 'onOptionGroupAdd',
-				'optgroup_remove' : 'onOptionGroupRemove',
-				'optgroup_clear'  : 'onOptionGroupClear',
-				'dropdown_open'   : 'onDropdownOpen',
-				'dropdown_close'  : 'onDropdownClose',
-				'type'            : 'onType',
-				'load'            : 'onLoad',
-				'focus'           : 'onFocus',
-				'blur'            : 'onBlur'
+				'initialize'        : 'onInitialize',
+				'change'            : 'onChange',
+				'item_add'          : 'onItemAdd',
+				'item_remove'       : 'onItemRemove',
+				'clear'             : 'onClear',
+				'option_add'        : 'onOptionAdd',
+				'option_remove'     : 'onOptionRemove',
+				'option_clear'      : 'onOptionClear',
+				'optgroup_add'      : 'onOptionGroupAdd',
+				'optgroup_remove'   : 'onOptionGroupRemove',
+				'optgroup_clear'    : 'onOptionGroupClear',
+				'dropdown_open'     : 'onDropdownOpen',
+				'dropdown_close'    : 'onDropdownClose',
+				'set_active_option' : 'onSetActiveOption',
+				'type'              : 'onType',
+				'load'              : 'onLoad',
+				'focus'             : 'onFocus',
+				'blur'              : 'onBlur'
 			};
 	
 			for (key in callbacks) {
@@ -993,7 +1016,7 @@
 		 * Invokes the user-provide option provider / loader.
 		 *
 		 * Note: this function is debounced in the Selectize
-		 * constructor (by `settings.loadDelay` milliseconds)
+		 * constructor (by `settings.loadThrottle` milliseconds)
 		 *
 		 * @param {string} value
 		 */
@@ -1001,7 +1024,6 @@
 			var self = this;
 			var fn = self.settings.load;
 			if (!fn) return;
-			if (self.loadedSearches.hasOwnProperty(value)) return;
 			self.loadedSearches[value] = true;
 			self.load(function(callback) {
 				fn.apply(self, [value, callback]);
@@ -1061,7 +1083,6 @@
 	
 			var deactivate = function() {
 				self.close();
-				self.setTextboxValue('');
 				self.setActiveItem(null);
 				self.setActiveOption(null);
 				self.setCaret(self.items.length);
@@ -1091,7 +1112,7 @@
 		 */
 		onOptionHover: function(e) {
 			if (this.ignoreHover) return;
-			this.setActiveOption(e.currentTarget, false);
+			this.setActiveOption(e.currentTarget, false, false, true);
 		},
 	
 		/**
@@ -1290,7 +1311,7 @@
 		 * @param {boolean} scroll
 		 * @param {boolean} animate
 		 */
-		setActiveOption: function($option, scroll, animate) {
+		setActiveOption: function($option, scroll, animate, isHover) {
 			var height_menu, height_item, y;
 			var scroll_top, scroll_bottom;
 			var self = this;
@@ -1303,11 +1324,10 @@
 	
 			self.$activeOption = $option.addClass('active');
 	
-			if (scroll || !isset(scroll)) {
-	
+			if (scroll || (!isset(scroll) || !scroll)) {
 				height_menu   = self.$dropdown_content.height();
 				height_item   = self.$activeOption.outerHeight(true);
-				scroll        = self.$dropdown_content.scrollTop() || 0;
+				scroll        = (self.$dropdown_content.scrollTop() || 0) + ((isset(scroll)) ? scroll : 0);
 				y             = self.$activeOption.offset().top - self.$dropdown_content.offset().top + scroll;
 				scroll_top    = y;
 				scroll_bottom = y - height_menu + height_item;
@@ -1317,8 +1337,9 @@
 				} else if (y < scroll) {
 					self.$dropdown_content.stop().animate({scrollTop: scroll_top}, animate ? self.settings.scrollDuration : 0);
 				}
-	
 			}
+	
+			self.trigger('set_active_option', $option, isHover);
 		},
 	
 		/**
@@ -1411,7 +1432,8 @@
 			return {
 				fields      : settings.searchField,
 				conjunction : settings.searchConjunction,
-				sort        : sort
+				sort        : sort,
+				filter      : settings.filter
 			};
 		},
 	
@@ -1506,10 +1528,10 @@
 						optgroup = '';
 					}
 					if (!groups.hasOwnProperty(optgroup)) {
-						groups[optgroup] = [];
+						groups[optgroup] = document.createDocumentFragment();
 						groups_order.push(optgroup);
 					}
-					groups[optgroup].push(option_html);
+					groups[optgroup].appendChild(option_html);
 				}
 			}
 	
@@ -1523,23 +1545,26 @@
 			}
 	
 			// render optgroup headers & join groups
-			html = [];
+			html = document.createDocumentFragment();
 			for (i = 0, n = groups_order.length; i < n; i++) {
 				optgroup = groups_order[i];
-				if (self.optgroups.hasOwnProperty(optgroup) && groups[optgroup].length) {
+				if (self.optgroups.hasOwnProperty(optgroup) && groups[optgroup].childNodes.length) {
 					// render the optgroup header and options within it,
 					// then pass it to the wrapper template
-					html_children = self.render('optgroup_header', self.optgroups[optgroup]) || '';
-					html_children += groups[optgroup].join('');
-					html.push(self.render('optgroup', $.extend({}, self.optgroups[optgroup], {
-						html: html_children
+					html_children = document.createDocumentFragment();
+					html_children.appendChild(self.render('optgroup_header', self.optgroups[optgroup]));
+					html_children.appendChild(groups[optgroup]);
+	
+					html.appendChild(self.render('optgroup', $.extend({}, self.optgroups[optgroup], {
+						html: domToString(html_children),
+						dom:  html_children
 					})));
 				} else {
-					html.push(groups[optgroup].join(''));
+					html.appendChild(groups[optgroup]);
 				}
 			}
 	
-			$dropdown_content.html(html.join(''));
+			$dropdown_content.html(html);
 	
 			// highlight matching terms inline
 			if (self.settings.highlight && results.query.length && results.tokens.length) {
@@ -1771,7 +1796,7 @@
 		},
 	
 		/**
-		 * Clears all options.
+		 * Clears all options. This includes clearing all selected items.
 		 */
 		clearOptions: function() {
 			var self = this;
@@ -1955,7 +1980,9 @@
 				self.updatePlaceholder();
 				self.updateOriginalInput({silent: silent});
 				self.positionDropdown();
-				self.trigger('item_remove', value, $item);
+	            if (!silent) {
+	                self.trigger('item_remove', value, $item);
+	            }
 			}
 		},
 	
@@ -2270,7 +2297,12 @@
 				self.setCaret(caret);
 			}
 			while (values.length) {
-				self.removeItem(values.pop());
+	            if (values.length > 1) {
+	                // Use silent flag
+	                self.removeItem(values.pop(), true);
+	            } else {
+	                self.removeItem(values.pop());
+	            }
 			}
 	
 			self.showInput();
@@ -2301,6 +2333,11 @@
 		advanceSelection: function(direction, e) {
 			var tail, selection, idx, valueLength, cursorAtEdge, $tail;
 			var self = this;
+	
+	        if (self.isFocused) {
+	            self.setActiveItem(null);
+	            return;
+	        }
 	
 			if (direction === 0) return;
 			if (self.rtl) direction *= -1;
@@ -2490,26 +2527,26 @@
 			}
 	
 			// render markup
-			html = self.settings.render[templateName].apply(this, [data, escape_html]);
+			html = $(self.settings.render[templateName].apply(this, [data, escape_html]));
 	
 			// add mandatory attributes
 			if (templateName === 'option' || templateName === 'option_create') {
-				html = html.replace(regex_tag, '<$1 data-selectable');
+				html.attr('data-selectable', '');
 			}
-			if (templateName === 'optgroup') {
+			else if (templateName === 'optgroup') {
 				id = data[self.settings.optgroupValueField] || '';
-				html = html.replace(regex_tag, '<$1 data-group="' + escape_replace(escape_html(id)) + '"');
+				html.attr('data-group', id);
 			}
 			if (templateName === 'option' || templateName === 'item') {
-				html = html.replace(regex_tag, '<$1 data-value="' + escape_replace(escape_html(value || '')) + '"');
+				html.attr('data-value', value || '');
 			}
 	
 			// update cache
 			if (cache) {
-				self.renderCache[templateName][value] = html;
+				self.renderCache[templateName][value] = html[0];
 			}
 	
-			return html;
+			return html[0];
 		},
 	
 		/**
@@ -2604,7 +2641,7 @@
 		onInitialize         : null, // function() { ... }
 		onChange             : null, // function(value) { ... }
 		onItemAdd            : null, // function(value, $item) { ... }
-		onItemRemove         : null, // function(value) { ... }
+		onItemRemove         : null, // function(value, $item) { ... }
 		onClear              : null, // function() { ... }
 		onOptionAdd          : null, // function(value, data) { ... }
 		onOptionRemove       : null, // function(value) { ... }
@@ -2971,59 +3008,113 @@
 	});
 	
 	Selectize.define('remove_button', function(options) {
-		if (this.settings.mode === 'single') return;
-	
 		options = $.extend({
-			label     : '&times;',
-			title     : 'Remove',
-			className : 'remove',
-			append    : true
-		}, options);
+				label     : '&times;',
+				title     : 'Remove',
+				className : 'remove',
+				append    : true
+			}, options);
 	
-		var self = this;
-		var html = '<a href="javascript:void(0)" class="' + options.className + '" tabindex="-1" title="' + escape_html(options.title) + '">' + options.label + '</a>';
+			var singleClose = function(thisRef, options) {
 	
-		/**
-		 * Appends an element as a child (with raw HTML).
-		 *
-		 * @param {string} html_container
-		 * @param {string} html_element
-		 * @return {string}
-		 */
-		var append = function(html_container, html_element) {
-			var pos = html_container.search(/(<\/[^>]+>\s*)$/);
-			return html_container.substring(0, pos) + html_element + html_container.substring(pos);
-		};
+				options.className = 'remove-single';
 	
-		this.setup = (function() {
-			var original = self.setup;
-			return function() {
-				// override the item rendering method to add the button to each
-				if (options.append) {
-					var render_item = self.settings.render.item;
-					self.settings.render.item = function(data) {
-						return append(render_item.apply(this, arguments), html);
+				var self = thisRef;
+				var html = '<a href="javascript:void(0)" class="' + options.className + '" tabindex="-1" title="' + escape_html(options.title) + '">' + options.label + '</a>';
+	
+				/**
+				 * Appends an element as a child (with raw HTML).
+				 *
+				 * @param {string} html_container
+				 * @param {string} html_element
+				 * @return {string}
+				 */
+				var append = function(html_container, html_element) {
+					return html_container + html_element;
+				};
+	
+				thisRef.setup = (function() {
+					var original = self.setup;
+					return function() {
+						// override the item rendering method to add the button to each
+						if (options.append) {
+							var id = $(self.$input.context).attr('id');
+							var selectizer = $('#'+id);
+	
+							var render_item = self.settings.render.item;
+							self.settings.render.item = function(data) {
+								return append(render_item.apply(thisRef, arguments), html);
+							};
+						}
+	
+						original.apply(thisRef, arguments);
+	
+						// add event listener
+						thisRef.$control.on('click', '.' + options.className, function(e) {
+							e.preventDefault();
+							if (self.isLocked) return;
+	
+							self.clear();
+						});
+	
 					};
-				}
-	
-				original.apply(this, arguments);
-	
-				// add event listener
-				this.$control.on('click', '.' + options.className, function(e) {
-					e.preventDefault();
-					if (self.isLocked) return;
-	
-					var $item = $(e.currentTarget).parent();
-					self.setActiveItem($item);
-					if (self.deleteSelection()) {
-						self.setCaret(self.items.length);
-					}
-				});
-	
+				})();
 			};
-		})();
 	
+			var multiClose = function(thisRef, options) {
+	
+				var self = thisRef;
+				var html = '<a href="javascript:void(0)" class="' + options.className + '" tabindex="-1" title="' + escape_html(options.title) + '">' + options.label + '</a>';
+	
+				/**
+				 * Appends an element as a child (with raw HTML).
+				 *
+				 * @param {string} html_container
+				 * @param {string} html_element
+				 * @return {string}
+				 */
+				var append = function(html_container, html_element) {
+					var pos = html_container.search(/(<\/[^>]+>\s*)$/);
+					return html_container.substring(0, pos) + html_element + html_container.substring(pos);
+				};
+	
+				thisRef.setup = (function() {
+					var original = self.setup;
+					return function() {
+						// override the item rendering method to add the button to each
+						if (options.append) {
+							var render_item = self.settings.render.item;
+							self.settings.render.item = function(data) {
+								return append(render_item.apply(thisRef, arguments), html);
+							};
+						}
+	
+						original.apply(thisRef, arguments);
+	
+						// add event listener
+						thisRef.$control.on('click', '.' + options.className, function(e) {
+							e.preventDefault();
+							if (self.isLocked) return;
+	
+							var $item = $(e.currentTarget).parent();
+							self.setActiveItem($item);
+							if (self.deleteSelection()) {
+								self.setCaret(self.items.length);
+							}
+						});
+	
+					};
+				})();
+			};
+	
+			if (this.settings.mode === 'single') {
+				singleClose(this, options);
+				return;
+			} else {
+				multiClose(this, options);
+			}
 	});
+	
 	
 	Selectize.define('restore_on_backspace', function(options) {
 		var self = this;
