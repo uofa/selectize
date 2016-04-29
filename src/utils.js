@@ -312,7 +312,15 @@ var autoGrow = function($input) {
 			value = placeholder;
 		}
 
-		width = measureString(value, $input) + 4;
+		var buffer = 4;
+		width = measureString(value, $input) + buffer;
+		// Add more width to allow easier text selection
+		if (width > buffer) {
+			var children_width = 0;
+			$input.parent().children(':not(input)').each(function() { children_width += $(this).outerWidth() + buffer; });
+			var remaining_space = $input.parent().width() - children_width - width;
+			width += remaining_space;
+		}
 		if (width !== currentWidth) {
 			currentWidth = width;
 			$input.width(width);

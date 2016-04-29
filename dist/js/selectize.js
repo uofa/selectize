@@ -432,15 +432,15 @@
 				value = placeholder;
 			}
 	
-	        var buffer = 4;
-	        width = measureString(value, $input) + buffer;
-	        // Add more width to allow easier text selection
-	        if (width > buffer) {
-	            var children_width = 0;
-	            $input.parent().children(':not(input)').each(function() { children_width += $(this).outerWidth() + buffer; });
-	            var remaining_space = $input.parent().width() - children_width - width;
-	            width += remaining_space;
-	        }
+			var buffer = 4;
+			width = measureString(value, $input) + buffer;
+			// Add more width to allow easier text selection
+			if (width > buffer) {
+				var children_width = 0;
+				$input.parent().children(':not(input)').each(function() { children_width += $(this).outerWidth() + buffer; });
+				var remaining_space = $input.parent().width() - children_width - width;
+				width += remaining_space;
+			}
 			if (width !== currentWidth) {
 				currentWidth = width;
 				$input.width(width);
@@ -1980,9 +1980,9 @@
 				self.updatePlaceholder();
 				self.updateOriginalInput({silent: silent});
 				self.positionDropdown();
-	            if (!silent) {
-	                self.trigger('item_remove', value, $item);
-	            }
+				if (!silent) {
+					self.trigger('item_remove', value, $item);
+				}
 			}
 		},
 	
@@ -2297,12 +2297,12 @@
 				self.setCaret(caret);
 			}
 			while (values.length) {
-	            if (values.length > 1) {
-	                // Use silent flag
-	                self.removeItem(values.pop(), true);
-	            } else {
-	                self.removeItem(values.pop());
-	            }
+				if (values.length > 1) {
+					// Use silent flag
+					self.removeItem(values.pop(), true);
+				} else {
+					self.removeItem(values.pop());
+				}
 			}
 	
 			self.showInput();
@@ -2334,10 +2334,10 @@
 			var tail, selection, idx, valueLength, cursorAtEdge, $tail;
 			var self = this;
 	
-	        if (self.isFocused) {
-	            self.setActiveItem(null);
-	            return;
-	        }
+			if (self.isFocused) {
+				self.setActiveItem(null);
+				return;
+			}
 	
 			if (direction === 0) return;
 			if (self.rtl) direction *= -1;

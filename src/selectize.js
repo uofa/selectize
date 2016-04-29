@@ -204,7 +204,8 @@ $.extend(Selectize.prototype, {
 		$document.on('mousedown' + eventNS, function(e) {
 			if (self.isFocused) {
 				// prevent events on the dropdown scrollbar from causing the control to blur
-				if (e.target === self.$dropdown[0] || e.target.parentNode === self.$dropdown[0]) {
+				if (e.target === self.$dropdown[0] || e.target.parentNode === self.$dropdown[0] ||
+				$(e.target).hasClass('optgroup-header')) {
 					return false;
 				}
 				// blur on click outside
@@ -220,7 +221,11 @@ $.extend(Selectize.prototype, {
 			}
 		});
 		$window.on('mousemove' + eventNS, function() {
-			self.ignoreHover = false;
+			if (self.settings.ignoreHover) {
+				self.ignoreHover = true;
+			} else {
+				self.ignoreHover = false;
+			}
 		});
 
 		// store original children and tab index so that they can be
@@ -304,23 +309,24 @@ $.extend(Selectize.prototype, {
 	 */
 	setupCallbacks: function() {
 		var key, fn, callbacks = {
-			'initialize'      : 'onInitialize',
-			'change'          : 'onChange',
-			'item_add'        : 'onItemAdd',
-			'item_remove'     : 'onItemRemove',
-			'clear'           : 'onClear',
-			'option_add'      : 'onOptionAdd',
-			'option_remove'   : 'onOptionRemove',
-			'option_clear'    : 'onOptionClear',
-			'optgroup_add'    : 'onOptionGroupAdd',
-			'optgroup_remove' : 'onOptionGroupRemove',
-			'optgroup_clear'  : 'onOptionGroupClear',
-			'dropdown_open'   : 'onDropdownOpen',
-			'dropdown_close'  : 'onDropdownClose',
-			'type'            : 'onType',
-			'load'            : 'onLoad',
-			'focus'           : 'onFocus',
-			'blur'            : 'onBlur'
+			'initialize'        : 'onInitialize',
+			'change'            : 'onChange',
+			'item_add'          : 'onItemAdd',
+			'item_remove'       : 'onItemRemove',
+			'clear'             : 'onClear',
+			'option_add'        : 'onOptionAdd',
+			'option_remove'     : 'onOptionRemove',
+			'option_clear'      : 'onOptionClear',
+			'optgroup_add'      : 'onOptionGroupAdd',
+			'optgroup_remove'   : 'onOptionGroupRemove',
+			'optgroup_clear'    : 'onOptionGroupClear',
+			'dropdown_open'     : 'onDropdownOpen',
+			'dropdown_close'    : 'onDropdownClose',
+			'set_active_option' : 'onSetActiveOption',
+			'type'              : 'onType',
+			'load'              : 'onLoad',
+			'focus'             : 'onFocus',
+			'blur'              : 'onBlur'
 		};
 
 		for (key in callbacks) {
@@ -555,7 +561,6 @@ $.extend(Selectize.prototype, {
 		var self = this;
 		var fn = self.settings.load;
 		if (!fn) return;
-		if (self.loadedSearches.hasOwnProperty(value)) return;
 		self.loadedSearches[value] = true;
 		self.load(function(callback) {
 			fn.apply(self, [value, callback]);
@@ -615,7 +620,6 @@ $.extend(Selectize.prototype, {
 
 		var deactivate = function() {
 			self.close();
-			self.setTextboxValue('');
 			self.setActiveItem(null);
 			self.setActiveOption(null);
 			self.setCaret(self.items.length);
@@ -645,7 +649,7 @@ $.extend(Selectize.prototype, {
 	 */
 	onOptionHover: function(e) {
 		if (this.ignoreHover) return;
-		this.setActiveOption(e.currentTarget, false);
+		this.setActiveOption(e.currentTarget, false, false, true);
 	},
 
 	/**
@@ -844,7 +848,7 @@ $.extend(Selectize.prototype, {
 	 * @param {boolean} scroll
 	 * @param {boolean} animate
 	 */
-	setActiveOption: function($option, scroll, animate) {
+	setActiveOption: function($option, scroll, animate, isHover) {
 		var height_menu, height_item, y;
 		var scroll_top, scroll_bottom;
 		var self = this;
@@ -857,11 +861,10 @@ $.extend(Selectize.prototype, {
 
 		self.$activeOption = $option.addClass('active');
 
-		if (scroll || !isset(scroll)) {
-
+		if (scroll || (!isset(scroll) || !scroll)) {
 			height_menu   = self.$dropdown_content.height();
 			height_item   = self.$activeOption.outerHeight(true);
-			scroll        = self.$dropdown_content.scrollTop() || 0;
+			scroll        = (self.$dropdown_content.scrollTop() || 0) + ((isset(scroll)) ? scroll : 0);
 			y             = self.$activeOption.offset().top - self.$dropdown_content.offset().top + scroll;
 			scroll_top    = y;
 			scroll_bottom = y - height_menu + height_item;
@@ -871,8 +874,9 @@ $.extend(Selectize.prototype, {
 			} else if (y < scroll) {
 				self.$dropdown_content.stop().animate({scrollTop: scroll_top}, animate ? self.settings.scrollDuration : 0);
 			}
-
 		}
+
+		self.trigger('set_active_option', $option, isHover);
 	},
 
 	/**
@@ -965,7 +969,8 @@ $.extend(Selectize.prototype, {
 		return {
 			fields      : settings.searchField,
 			conjunction : settings.searchConjunction,
-			sort        : sort
+			sort        : sort,
+			filter      : settings.filter
 		};
 	},
 
@@ -1328,7 +1333,7 @@ $.extend(Selectize.prototype, {
 	},
 
 	/**
-	 * Clears all options.
+	 * Clears all options. This includes clearing all selected items.
 	 */
 	clearOptions: function() {
 		var self = this;
@@ -1512,7 +1517,9 @@ $.extend(Selectize.prototype, {
 			self.updatePlaceholder();
 			self.updateOriginalInput({silent: silent});
 			self.positionDropdown();
-			self.trigger('item_remove', value, $item);
+			if (!silent) {
+				self.trigger('item_remove', value, $item);
+			}
 		}
 	},
 
@@ -1827,7 +1834,12 @@ $.extend(Selectize.prototype, {
 			self.setCaret(caret);
 		}
 		while (values.length) {
-			self.removeItem(values.pop());
+			if (values.length > 1) {
+				// Use silent flag
+				self.removeItem(values.pop(), true);
+			} else {
+				self.removeItem(values.pop());
+			}
 		}
 
 		self.showInput();
@@ -1858,6 +1870,11 @@ $.extend(Selectize.prototype, {
 	advanceSelection: function(direction, e) {
 		var tail, selection, idx, valueLength, cursorAtEdge, $tail;
 		var self = this;
+
+		if (self.isFocused) {
+			self.setActiveItem(null);
+			return;
+		}
 
 		if (direction === 0) return;
 		if (self.rtl) direction *= -1;
